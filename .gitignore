@@ -1,34 +1,15 @@
-# Arquivos Python compilados
+# Arquivos Python
 __pycache__/
 *.py[cod]
-*$py.class
+*.class
 
-# Ambiente virtual
-.venv/
-env/
-venv/
-ENV/
-
-# Arquivos de log
+# Logs e arquivos de debug
 logs/
 *.log
-
-# Arquivos de debug
 debug/
 
-# Arquivos específicos do sistema operacional
+# Arquivos do Mac
 .DS_Store
-Thumbs.db
 
-# Diretórios e arquivos específicos do projeto
-node_modules/
-.env
+# Arquivos CSV
 *.csv
-
-# Arquivos locais de IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-collection_cache.json 
