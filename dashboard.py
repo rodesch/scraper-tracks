@@ -36,8 +36,19 @@ SCRAPERS = {
     },
     'locomotiva': {
         'script': 'extrair_cds_locomotiva.py',
-        'nome': 'Locomotiva Discos',
+        'nome': 'Locomotiva Discos (CDs Usados)',
         'arquivo_csv': 'produtos_cd_locomotiva.csv',
+        'status': 'parado',
+        'processo': None,
+        'ultima_execucao': None,
+        'total_produtos': 0,
+        'log_file': None,
+        'produtos_anteriores': set()
+    },
+    'locomotiva_novos': {
+        'script': 'extrair_cds_locomotiva_novos.py',
+        'nome': 'Locomotiva Discos (CDs Novos)',
+        'arquivo_csv': 'produtos_cd_locomotiva_novos.csv',
         'status': 'parado',
         'processo': None,
         'ultima_execucao': None,
