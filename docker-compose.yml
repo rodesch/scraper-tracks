@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  scraper-tracks:
+    build: .
+    container_name: scraper-tracks
+    ports:
+      - "5002:5002"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./debug:/app/debug
+    restart: unless-stopped 
