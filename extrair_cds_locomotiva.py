@@ -154,7 +154,11 @@ class LocomotivaDiscosScraper:
                     if link_element and link_element.get('href'):
                         url_produto = link_element['href']
                         if not url_produto.startswith('http'):
-                            url_produto = f"{self.BASE_URL}{url_produto}"
+                            # Garante que a URL comece com o BASE_URL e tenha uma barra após o domínio
+                            if url_produto.startswith('/'):
+                                url_produto = f"{self.BASE_URL}{url_produto}"
+                            else:
+                                url_produto = f"{self.BASE_URL}/{url_produto}"
                     
                     if not url_produto:
                         continue
@@ -371,13 +375,17 @@ class LocomotivaDiscosScraper:
                 
                 # Atualiza a URL para a próxima página
                 if not proxima_pagina.startswith('http'):
-                    # Verifica se a URL já contém o domínio base
+                    # Garante que a URL comece com o BASE_URL e tenha uma barra após o domínio
                     if proxima_pagina.startswith('/'):
                         url_atual = f"{self.BASE_URL}{proxima_pagina}"
                     else:
                         url_atual = f"{self.BASE_URL}/{proxima_pagina}"
                 else:
-                    url_atual = proxima_pagina
+                    # Verifica se a URL já tem http:// mas precisa de uma barra após o domínio
+                    if 'locomotivadiscos.com.br' in proxima_pagina and not 'locomotivadiscos.com.br/' in proxima_pagina:
+                        url_atual = proxima_pagina.replace('locomotivadiscos.com.br', 'locomotivadiscos.com.br/')
+                    else:
+                        url_atual = proxima_pagina
                 
                 # Avança o contador de páginas
                 pagina_atual += 1

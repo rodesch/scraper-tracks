@@ -110,16 +110,19 @@ $(document).ready(function() {
     
     // Evento para o botão de busca
     $('#btn-buscar').on('click', function() {
-        termoBusca = $('#busca-produtos').val();
+        const termoBusca = $('#busca-produtos').val().trim();
         if (currentScraperId) {
-            carregarProdutos(currentScraperId, 1);
+            carregarProdutos(currentScraperId, 1, termoBusca);
         }
     });
     
-    // Evento de tecla enter no campo de busca
+    // Evento para buscar ao pressionar Enter no campo de busca
     $('#busca-produtos').on('keypress', function(e) {
-        if (e.which === 13) {
-            $('#btn-buscar').click();
+        if (e.which === 13) { // Código da tecla Enter
+            const termoBusca = $(this).val().trim();
+            if (currentScraperId) {
+                carregarProdutos(currentScraperId, 1, termoBusca);
+            }
         }
     });
     
@@ -261,16 +264,26 @@ $(document).ready(function() {
         });
     }
     
-    // Função para carregar produtos de um scraper
-    function carregarProdutos(scraperId, pagina) {
-        currentScraperId = scraperId;
-        currentPagina = pagina;
+    // Função para carregar produtos
+    function carregarProdutos(scraperId, pagina = 1, termoBusca = '') {
+        // Armazena estado atual para paginação e busca
+        window.currentScraperId = scraperId;
+        window.currentPagina = pagina;
+        window.currentTermoBusca = termoBusca;
         
-        // Atualiza o título da seção
-        const scraperNome = $(`button[data-id="${scraperId}"]`).closest('.card').find('.card-header h5').text();
-        $('#visualizacao-titulo').text(`Produtos de ${scraperNome}`);
+        // Define padrão de itens por página
+        const itensPorPagina = 10;
         
-        // Limpa a tabela e adiciona um indicador de carregamento
+        // Atualiza título
+        $('#visualizacao-titulo').text(`Visualização de Produtos - ${scraperId.charAt(0).toUpperCase() + scraperId.slice(1).replace('_', ' ')}`);
+        
+        // Seleciona a aba de produtos
+        $('#produtos-tab').tab('show');
+        
+        // Atualiza campo de busca
+        $('#busca-produtos').val(termoBusca);
+        
+        // Limpa a tabela e mostra loading
         $('#tabela-produtos tbody').html(`
             <tr>
                 <td colspan="5" class="text-center">
@@ -300,11 +313,29 @@ $(document).ready(function() {
                         // Limpa a tabela
                         $('#tabela-produtos tbody').empty();
                         
+                        // Conta quantos produtos novos existem
+                        const novos_produtos = resposta.produtos.filter(p => p.is_new).length;
+                        
+                        // Adiciona cabeçalho com contador de novos produtos se houver
+                        if (novos_produtos > 0) {
+                            $('#tabela-produtos tbody').append(`
+                                <tr class="table-info">
+                                    <td colspan="5" class="text-center">
+                                        <strong>${novos_produtos} produto(s) novo(s) encontrado(s) desde a última execução!</strong>
+                                    </td>
+                                </tr>
+                            `);
+                        }
+                        
                         // Adiciona cada produto à tabela
                         resposta.produtos.forEach(function(produto) {
+                            // Adiciona indicador "NEW" se o produto for novo
+                            const newTag = produto.is_new ? 
+                                `<span class="badge bg-danger ms-2">NEW</span>` : '';
+                            
                             $('#tabela-produtos tbody').append(`
                                 <tr>
-                                    <td>${produto.titulo || '-'}</td>
+                                    <td>${produto.titulo || '-'} ${newTag}</td>
                                     <td>${produto.artista || '-'}</td>
                                     <td>${produto.preco || '-'}</td>
                                     <td>${produto.categoria || '-'}</td>
@@ -370,7 +401,7 @@ $(document).ready(function() {
         prevButton.click(function(e) {
             e.preventDefault();
             if (paginaAtual > 1) {
-                carregarProdutos(scraperId, paginaAtual - 1);
+                carregarProdutos(scraperId, paginaAtual - 1, window.currentTermoBusca || '');
             }
         });
         
@@ -391,7 +422,7 @@ $(document).ready(function() {
             
             pageButton.click(function(e) {
                 e.preventDefault();
-                carregarProdutos(scraperId, i);
+                carregarProdutos(scraperId, i, window.currentTermoBusca || '');
             });
             
             pagination.append(pageButton);
@@ -407,7 +438,7 @@ $(document).ready(function() {
         nextButton.click(function(e) {
             e.preventDefault();
             if (paginaAtual < totalPaginas) {
-                carregarProdutos(scraperId, paginaAtual + 1);
+                carregarProdutos(scraperId, paginaAtual + 1, window.currentTermoBusca || '');
             }
         });
         

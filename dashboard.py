@@ -6,6 +6,7 @@ import json
 import re
 from flask import Flask, render_template, jsonify, request, Response, send_file
 from datetime import datetime
+import hashlib
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -19,7 +20,8 @@ SCRAPERS = {
         'processo': None,
         'ultima_execucao': None,
         'total_produtos': 0,
-        'log_file': None
+        'log_file': None,
+        'produtos_anteriores': set()  # Armazenará IDs dos produtos da última execução
     },
     'sebo_messias_selenium': {
         'script': 'extrair_cds_sebo_messias_selenium.py',
@@ -29,7 +31,63 @@ SCRAPERS = {
         'processo': None,
         'ultima_execucao': None,
         'total_produtos': 0,
-        'log_file': None
+        'log_file': None,
+        'produtos_anteriores': set()
+    },
+    'locomotiva': {
+        'script': 'extrair_cds_locomotiva.py',
+        'nome': 'Locomotiva Discos',
+        'arquivo_csv': 'produtos_cd_locomotiva.csv',
+        'status': 'parado',
+        'processo': None,
+        'ultima_execucao': None,
+        'total_produtos': 0,
+        'log_file': None,
+        'produtos_anteriores': set()
+    },
+    'supernova': {
+        'script': 'extrair_cds_supernova.py',
+        'nome': 'Supernova',
+        'arquivo_csv': 'produtos_cd_supernova.csv',
+        'status': 'parado',
+        'processo': None,
+        'ultima_execucao': None,
+        'total_produtos': 0,
+        'log_file': None,
+        'produtos_anteriores': set()
+    },
+    'supernova_selenium': {
+        'script': 'extrair_cds_supernova_selenium.py',
+        'nome': 'Supernova (Selenium)',
+        'arquivo_csv': 'produtos_cd_supernova.csv',
+        'status': 'parado',
+        'processo': None,
+        'ultima_execucao': None,
+        'total_produtos': 0,
+        'log_file': None,
+        'produtos_anteriores': set()
+    },
+    'tracks_rio': {
+        'script': 'extrair_cds_tracks_rio.py',
+        'nome': 'Tracks Rio',
+        'arquivo_csv': 'produtos_cd_tracks_rio.csv',
+        'status': 'parado',
+        'processo': None,
+        'ultima_execucao': None,
+        'total_produtos': 0,
+        'log_file': None,
+        'produtos_anteriores': set()
+    },
+    'shopee': {
+        'script': 'extrair_cds_shopee.py',
+        'nome': 'Shopee (LinhuaCong)',
+        'arquivo_csv': 'produtos_cd_shopee.csv',
+        'status': 'parado',
+        'processo': None,
+        'ultima_execucao': None,
+        'total_produtos': 0,
+        'log_file': None,
+        'produtos_anteriores': set()
     }
 }
 
@@ -52,6 +110,10 @@ def iniciar_scraper(scraper_id):
         return jsonify({'status': 'aviso', 'mensagem': 'Scraper já está em execução'})
     
     try:
+        # Armazena os IDs dos produtos antes de iniciar um novo scraper
+        arquivo_csv = SCRAPERS[scraper_id]['arquivo_csv']
+        SCRAPERS[scraper_id]['produtos_anteriores'] = obter_ids_produtos_atuais(arquivo_csv)
+        
         # Inicia o script em um processo separado
         thread = threading.Thread(target=executar_scraper, args=(scraper_id,))
         thread.daemon = True
@@ -63,6 +125,30 @@ def iniciar_scraper(scraper_id):
         })
     except Exception as e:
         return jsonify({'status': 'erro', 'mensagem': f'Erro ao iniciar scraper: {str(e)}'})
+
+def obter_ids_produtos_atuais(arquivo_csv):
+    """Obtém os IDs únicos dos produtos que já existem no CSV"""
+    produtos_ids = set()
+    
+    if os.path.exists(arquivo_csv):
+        try:
+            with open(arquivo_csv, 'r', encoding='utf-8') as f:
+                leitor = csv.DictReader(f)
+                for produto in leitor:
+                    # Cria um ID único baseado na URL e título do produto
+                    produto_id = gerar_produto_id(produto)
+                    produtos_ids.add(produto_id)
+        except Exception as e:
+            print(f"Erro ao ler produtos existentes: {e}")
+    
+    return produtos_ids
+
+def gerar_produto_id(produto):
+    """Gera um ID único para um produto baseado em seus atributos"""
+    # Usa URL como identificador principal, pois deve ser único
+    # Adiciona o título como backup, caso a URL mude mas seja o mesmo produto
+    identificador = (produto.get('url', '') + produto.get('titulo', '')).encode('utf-8')
+    return hashlib.md5(identificador).hexdigest()
 
 def executar_scraper(scraper_id):
     SCRAPERS[scraper_id]['status'] = 'rodando'
@@ -130,6 +216,7 @@ def obter_produtos(scraper_id):
         return jsonify({'status': 'erro', 'mensagem': 'Scraper não encontrado'})
     
     arquivo_csv = SCRAPERS[scraper_id]['arquivo_csv']
+    produtos_anteriores = SCRAPERS[scraper_id]['produtos_anteriores']
     
     # Parâmetros de paginação e busca
     pagina = int(request.args.get('pagina', 1))
@@ -148,6 +235,14 @@ def obter_produtos(scraper_id):
                 # Filtra e pagina os resultados
                 todos_produtos = list(leitor)
                 total_produtos = len(todos_produtos)
+                
+                # Marca produtos novos (não vistos na última execução)
+                for produto in todos_produtos:
+                    produto_id = gerar_produto_id(produto)
+                    if produto_id not in produtos_anteriores:
+                        produto['is_new'] = True
+                    else:
+                        produto['is_new'] = False
                 
                 # Aplica filtro de busca se necessário
                 if termo_busca:
@@ -346,11 +441,5 @@ def atualizar_informacoes_scraper(scraper_id):
         except:
             pass
 
-if __name__ == "__main__":
-    # Cria diretórios necessários
-    os.makedirs('templates', exist_ok=True)
-    os.makedirs('static', exist_ok=True)
-    os.makedirs('static/css', exist_ok=True)
-    os.makedirs('static/js', exist_ok=True)
-    
-    app.run(debug=True, port=5002) 
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5010, debug=False) 

@@ -158,7 +158,7 @@ class TracksRioScraper:
                                         'preco': preco_texto,
                                         'categoria': self.extrair_categoria(titulo),
                                         'url': url_produto,
-                                        'data_extracao': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                        'data_extracao': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                     })
             
             logger.info(f"Encontrados {len(produtos)} produtos com 'CD' nesta página.")
@@ -286,7 +286,7 @@ class TracksRioScraper:
                         produto.get('preco', ''),
                         produto.get('categoria', ''),
                         produto.get('url', ''),
-                        produto.get('data_extracao', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                        produto.get('data_extracao', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
                     ])
             
             logger.info(f"Dados salvos com sucesso no arquivo {self.arquivo_saida}")

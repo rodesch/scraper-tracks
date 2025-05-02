@@ -23,8 +23,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import
-from typing import List, Dict, Optional, Any, Union TimeoutException, NoSuchElementException, WebDriverException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from typing import List, Dict, Optional, Any, Union
+from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.utils import ChromeType
 
 # Cria as pastas para logs e debug se não existirem
 os.makedirs('logs', exist_ok=True)
@@ -106,8 +108,15 @@ class SupernovaDiscosSeleniumScraper:
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36")
             
-            # Inicializa o driver
-            self.driver = webdriver.Chrome(options=chrome_options)
+            # Adicionar opções para evitar detecção de automação
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option("useAutomationExtension", False)
+            
+            # Usar o ChromeDriver instalado manualmente no Dockerfile
+            service = Service(executable_path="/usr/local/bin/chromedriver")
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            
             self.driver.set_page_load_timeout(30)
             logger.info("Driver do Selenium inicializado com sucesso.")
         except Exception as e:

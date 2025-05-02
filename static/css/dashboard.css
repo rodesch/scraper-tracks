@@ -25,6 +25,28 @@ body {
     padding: 5px 10px;
 }
 
+/* Tag NEW para produtos novos */
+.badge.bg-danger {
+    animation: pulse 1.5s infinite;
+    font-weight: bold;
+    font-size: 0.75rem;
+    padding: 3px 8px;
+    vertical-align: middle;
+    letter-spacing: 0.5px;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
 /* Animações */
 .spinner-grow {
     width: 1.5rem;

@@ -23,8 +23,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import
-from typing import List, Dict, Optional, Any, Union TimeoutException, NoSuchElementException, StaleElementReferenceException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
+from typing import List, Dict, Optional, Any, Union
 
 # Cria as pastas para logs e debug se não existirem
 os.makedirs('logs', exist_ok=True)
@@ -79,31 +79,17 @@ def inicializar_driver():
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        # Adicionar opções para evitar detecção de automação
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option("useAutomationExtension", False)
         
-        sistema = platform.system()
-        logging.info(f"Sistema operacional: {sistema}")
+        # Usar o ChromeDriver instalado manualmente no Dockerfile
+        service = Service(executable_path="/usr/local/bin/chromedriver")
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        if sistema == "Darwin":  # macOS
-            # Para macOS, tentamos usar o Safari Driver ou Chrome com configuração específica
-            try:
-                logging.info("Tentando usar o Safari Driver no macOS")
-                return webdriver.Safari()
-            except Exception as e:
-                logging.warning(f"Erro ao inicializar Safari Driver: {str(e)}")
-                
-                # Alternativa: tentar usar Chrome com configuração específica para macOS
-                try:
-                    logging.info("Tentando usar Chrome no macOS")
-                    return webdriver.Chrome(options=chrome_options)
-                except Exception as e:
-                    logging.error(f"Erro ao inicializar Chrome no macOS: {str(e)}")
-                    raise
-        else:
-            # Para Windows/Linux, usamos o Chrome com webdriver-manager
-            from webdriver_manager.chrome import ChromeDriverManager
-            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-            driver.set_page_load_timeout(30)
-            return driver
+        driver.set_page_load_timeout(30)
+        return driver
     
     except Exception as e:
         logging.error(f"Erro ao inicializar o driver Selenium: {str(e)}")
