@@ -1,0 +1,2 @@
+# Tratar arquivos CSV como texto no Git
+*.csv text eol=lf

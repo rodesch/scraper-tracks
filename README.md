@@ -1,6 +1,64 @@
-# Scrapers de Lojas de CDs
+# Scrapers de CDs 
 
-Este projeto contém uma coleção de scrapers para lojas de CDs online, com uma interface web para gerenciamento e visualização dos dados extraídos.
+Este repositório contém scripts para extrair informações de CDs de diversos sites de venda.
+
+## Scrapers Disponíveis
+
+- **Sebo do Messias**: Extração de CDs do site Sebo do Messias
+- **Sebo do Messias (Selenium)**: Versão alternativa usando Selenium
+- **Locomotiva Discos (CDs Usados)**: Extração de CDs usados do site Locomotiva Discos
+- **Locomotiva Discos (CDs Novos)**: Extração de CDs novos do site Locomotiva Discos
+- **Supernova**: Extração de CDs do site Supernova
+- **Supernova (Selenium)**: Versão alternativa usando Selenium
+- **Tracks Rio**: Extração de CDs do site Tracks Rio
+- **Shopee (LinhuaCong)**: Extração de CDs da loja LinhuaCong na Shopee
+- **Pops Discos**: Extração de CDs do site Pops Discos
+
+## Dashboard
+
+O dashboard permite controlar todos os scrapers a partir de uma interface web, visualizar os produtos extraídos, consultar logs de execução e baixar os dados em formato CSV.
+
+### Como executar o dashboard
+
+```
+python dashboard.py
+```
+
+O dashboard estará disponível em http://localhost:5002/
+
+## Estrutura do Projeto
+
+- `extrair_cds_*.py`: Scripts de scraping para cada site
+- `dashboard.py`: Interface web para controle dos scrapers
+- `templates/`: Templates HTML para o dashboard
+- `static/`: Arquivos estáticos para o dashboard (CSS, JavaScript)
+- `exemplos_csv/`: Exemplos de arquivos CSV com estrutura de dados de cada scraper
+
+## Formatos de Dados
+
+Todos os scrapers salvam os dados em arquivos CSV com a seguinte estrutura básica:
+
+```
+titulo,preco,categoria,url,data_extracao
+```
+
+Alguns scrapers incluem campos adicionais como `artista`, `codigo_produto`, etc.
+
+## Requisitos
+
+- Python 3.6+
+- Bibliotecas: requests, beautifulsoup4, selenium (para alguns scrapers), flask (para o dashboard)
+
+## Instalação
+
+1. Clone o repositório
+2. Instale as dependências:
+
+```
+pip install -r requirements.txt
+```
+
+3. Execute o dashboard ou os scrapers individualmente
 
 ## Funcionalidades
 
