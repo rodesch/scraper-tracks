@@ -26,7 +26,7 @@ SCRAPERS = {
     'sebo_messias_selenium': {
         'script': 'extrair_cds_sebo_messias_selenium.py',
         'nome': 'Sebo do Messias (Selenium)',
-        'arquivo_csv': 'produtos_cd_sebo_messias.csv',
+        'arquivo_csv': 'produtos_cd_sebo_messias_selenium.csv',
         'status': 'parado',
         'processo': None,
         'ultima_execucao': None,
@@ -34,7 +34,7 @@ SCRAPERS = {
         'log_file': None,
         'produtos_anteriores': set()
     },
-    'locomotiva': {
+    'locomotiva_usados': {
         'script': 'extrair_cds_locomotiva.py',
         'nome': 'Locomotiva Discos (CDs Usados)',
         'arquivo_csv': 'produtos_cd_locomotiva.csv',
@@ -70,7 +70,7 @@ SCRAPERS = {
     'supernova_selenium': {
         'script': 'extrair_cds_supernova_selenium.py',
         'nome': 'Supernova (Selenium)',
-        'arquivo_csv': 'produtos_cd_supernova.csv',
+        'arquivo_csv': 'produtos_cd_supernova_selenium.csv',
         'status': 'parado',
         'processo': None,
         'ultima_execucao': None,
@@ -78,8 +78,8 @@ SCRAPERS = {
         'log_file': None,
         'produtos_anteriores': set()
     },
-    'tracks_rio': {
-        'script': 'extrair_cds_tracks_rio.py',
+    'tracks': {
+        'script': 'extrair_cds_tracks.py',
         'nome': 'Tracks Rio',
         'arquivo_csv': 'produtos_cd_tracks_rio.csv',
         'status': 'parado',
@@ -90,9 +90,20 @@ SCRAPERS = {
         'produtos_anteriores': set()
     },
     'shopee': {
-        'script': 'extrair_cds_shopee.py',
+        'script': 'extrair_cds_shopee_selenium.py',
         'nome': 'Shopee (LinhuaCong)',
         'arquivo_csv': 'produtos_cd_shopee.csv',
+        'status': 'parado',
+        'processo': None,
+        'ultima_execucao': None,
+        'total_produtos': 0,
+        'log_file': None,
+        'produtos_anteriores': set()
+    },
+    'pops_discos': {
+        'script': 'extrair_cds_pops_discos.py',
+        'nome': 'Pops Discos',
+        'arquivo_csv': 'produtos_cd_pops_discos.csv',
         'status': 'parado',
         'processo': None,
         'ultima_execucao': None,
@@ -453,4 +464,7 @@ def atualizar_informacoes_scraper(scraper_id):
             pass
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5010, debug=False) 
+    # IMPORTANTE: Não altere esta porta (5002) pois é a que está mapeada no Docker 
+    # e configurada no servidor. Alterar a porta causará problemas de acesso.
+    # O mapeamento no Docker é: 0.0.0.0:5002->5002/tcp, :::5002->5002/tcp
+    app.run(host='0.0.0.0', port=5002, debug=False)
