@@ -9,6 +9,7 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Optional, Any, Union
 import json
+import argparse
 
 # Cria as pastas para logs e debug se não existirem
 os.makedirs('logs', exist_ok=True)
@@ -39,7 +40,7 @@ class LocomotivaNovosDiscosScraper:
                  delay_min: float = 1.0, 
                  delay_max: float = 3.0,
                  arquivo_saida: str = None,
-                 ignorar_produtos_existentes: bool = False) -> None:
+                 modo: str = "novos") -> None:
         """
         Inicializa o scraper com parâmetros configuráveis
         
@@ -49,14 +50,14 @@ class LocomotivaNovosDiscosScraper:
             delay_min: Atraso mínimo entre requisições (segundos)
             delay_max: Atraso máximo entre requisições (segundos)
             arquivo_saida: Nome do arquivo CSV de saída
-            ignorar_produtos_existentes: Se True, recoleta todos os produtos mesmo que já existam
+            modo: Modo de execução ("full" para busca completa, "novos" para buscar apenas novos itens)
         """
         self.url_inicial = url_inicial or "https://www.locomotivadiscos.com.br/cds-novos-ct-3afa5"
         self.max_paginas = max_paginas
         self.delay_min = delay_min
         self.delay_max = delay_max
         self.arquivo_saida = arquivo_saida or self.DEFAULT_OUTPUT
-        self.ignorar_produtos_existentes = ignorar_produtos_existentes
+        self.modo = modo.lower()
         self.todos_produtos = []
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -68,15 +69,17 @@ class LocomotivaNovosDiscosScraper:
         }
         
         # Verificar se já existe arquivo de produtos para continuar a partir dele
-        if not self.ignorar_produtos_existentes:
-            self._carregar_produtos_existentes()
-        else:
-            logger.info("Ignorando produtos existentes. Todos os produtos serão recoletados.")
+        self._carregar_produtos_existentes()
     
     def _carregar_produtos_existentes(self) -> None:
         """Carrega produtos de um arquivo CSV existente, se disponível"""
         if os.path.exists(self.arquivo_saida):
             try:
+                # Se modo for "full", não carrega os produtos existentes
+                if self.modo == "full":
+                    logger.info(f"Modo 'full' selecionado. Arquivo {self.arquivo_saida} será recriado.")
+                    return
+                
                 with open(self.arquivo_saida, 'r', encoding='utf-8') as arquivo:
                     leitor = csv.DictReader(arquivo)
                     self.todos_produtos = list(leitor)
@@ -176,36 +179,25 @@ class LocomotivaNovosDiscosScraper:
                     if not url_produto:
                         continue
                     
-                    # Verifica se o produto já existe na lista (pula se estiver ignorando produtos existentes)
-                    if not self.ignorar_produtos_existentes:
-                        produto_existente = False
-                        for produto in self.todos_produtos:
-                            if produto.get('titulo') == titulo and produto.get('url') == url_produto:
-                                produto_existente = True
-                                break
-                        
-                        # Adiciona o produto se não for duplicado
-                        if not produto_existente and not any(p['titulo'] == titulo and p['url'] == url_produto for p in produtos):
-                            produtos.append({
-                                'titulo': titulo,
-                                'preco': preco_texto,
-                                'categoria': self.extrair_categoria(titulo),
-                                'url': url_produto,
-                                'data_extracao': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            })
-                    else:
-                        # Adiciona todos os produtos quando ignorar_produtos_existentes é True
-                        if not any(p['titulo'] == titulo and p['url'] == url_produto for p in produtos):
-                            produtos.append({
-                                'titulo': titulo,
-                                'preco': preco_texto,
-                                'categoria': self.extrair_categoria(titulo),
-                                'url': url_produto,
-                                'data_extracao': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            })
+                    # Verifica se o produto já existe na lista
+                    produto_existente = False
+                    for produto in self.todos_produtos:
+                        if produto.get('titulo') == titulo and produto.get('url') == url_produto:
+                            produto_existente = True
+                            break
+                    
+                    # Adiciona o produto se não for duplicado (ou se estivermos no modo "full")
+                    if (self.modo == "full" or not produto_existente) and not any(p['titulo'] == titulo and p['url'] == url_produto for p in produtos):
+                        produtos.append({
+                            'titulo': titulo,
+                            'preco': preco_texto,
+                            'categoria': self.extrair_categoria(titulo),
+                            'url': url_produto,
+                            'data_extracao': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        })
+                
                 except Exception as e:
-                    logger.warning(f"Erro ao processar um elemento de produto: {e}")
-                    continue
+                    logger.error(f"Erro ao processar elemento de produto: {e}")
             
             logger.info(f"Encontrados {len(produtos)} produtos com 'CD' nesta página.")
             return produtos
@@ -227,27 +219,24 @@ class LocomotivaNovosDiscosScraper:
         """
         titulo_lower = titulo.lower()
         
-        # Categorias do site da Locomotiva Discos para CDs novos
+        # Categorias com mapeamento simples
         categorias = [
-            (["rock", "pop", "guitar"], "Rock / Pop"),
-            (["brasil", "mpb", "samba", "bossa", "choro", "nacional"], "Música Brasileira / Rock Nacional"),
-            (["jazz"], "Jazz / Erudito"),
-            (["blues"], "Jazz / Erudito"),
-            (["soul", "funk", "r&b", "hip hop", "rap", "world", "reggae"], "Soul / Funk / Hip-Hop / World / Reggae"),
-            (["punk", "hardcore"], "Punk / Hardcore"),
-            (["metal", "heavy", "thrash", "death"], "Metal"),
-            (["world", "música do mundo", "latin"], "Soul / Funk / Hip-Hop / World / Reggae"),
-            (["reggae", "ska", "dub"], "Soul / Funk / Hip-Hop / World / Reggae"),
-            (["eletrônic", "techno", "house", "trance", "dance", "experimental"], "Eletrônico / Experimental"),
-            (["indie", "shoegaze"], "Indiepop / Shoegaze"),
-            (["clássic", "erudito", "orquestra", "symphony"], "Jazz / Erudito")
+            (["rock", "pop"], "Rock / Pop"),
+            (["jazz"], "Jazz"),
+            (["brasil", "mpb", "samba", "bossa", "choro"], "Música do Brasil"),
+            (["world", "música do mundo"], "World Music"),
+            (["black", "soul", "funk", "r&b", "hip hop", "rap"], "Black Music"),
+            (["clássic", "erudito", "orquestra", "symphony"], "Eruditos"),
+            (["blues"], "Blues"),
+            (["reggae", "ska", "dub"], "Reggae"),
+            (["eletrônic", "techno", "house", "trance"], "Eletrônica")
         ]
         
         for termos, categoria in categorias:
             if any(termo in titulo_lower for termo in termos):
                 return categoria
         
-        return "Outros"
+        return "Outros Sons"
     
     def encontrar_proxima_pagina(self, soup: BeautifulSoup, pagina_atual: int) -> Optional[str]:
         """
@@ -341,7 +330,12 @@ class LocomotivaNovosDiscosScraper:
 
     def executar(self) -> None:
         """Executa o processo de extração completo"""
-        logger.info(f"Iniciando extração de produtos com 'CD' do site Locomotiva Discos (CDs NOVOS)...")
+        logger.info(f"Iniciando extração de produtos com 'CD' do site Locomotiva Discos (CDs NOVOS) no modo '{self.modo}'...")
+        
+        # Se estiver no modo "full", limpa os dados existentes
+        if self.modo == "full" and os.path.exists(self.arquivo_saida):
+            logger.info(f"Modo 'full' selecionado. Recriando o arquivo {self.arquivo_saida}")
+            self.todos_produtos = []
         
         produtos_novos = []
         url_atual = self.url_inicial
@@ -370,9 +364,15 @@ class LocomotivaNovosDiscosScraper:
                 # Adiciona os produtos à lista de novos produtos
                 produtos_novos.extend(produtos_pagina)
                 
+                # Determina o modo de escrita para o CSV
+                if self.modo == "full" and pagina_atual == 1:
+                    modo_escrita = 'w'  # Sobrescreve o arquivo no modo "full" na primeira página
+                else:
+                    modo_escrita = 'a'  # Anexa em todas as outras situações
+                
                 # Salva incrementalmente a cada página para evitar perda de dados
                 if produtos_pagina:
-                    self.salvar_para_csv(produtos_pagina, modo='a' if pagina_atual > 1 or self.todos_produtos else 'w')
+                    self.salvar_para_csv(produtos_pagina, modo=modo_escrita)
                     self.todos_produtos.extend(produtos_pagina)
                 
                 # Se não encontrou produtos por duas páginas seguidas, pode indicar o fim
@@ -435,12 +435,25 @@ class LocomotivaNovosDiscosScraper:
 def main():
     """Função principal para executar o scraper"""
     try:
+        # Configuração dos argumentos de linha de comando
+        parser = argparse.ArgumentParser(description='Scraper de CDs novos do site Locomotiva Discos')
+        parser.add_argument('--modo', choices=['full', 'novos'], default='novos',
+                          help='Modo de execução: "full" para extrair tudo do zero, "novos" para extrair apenas novos itens (padrão: novos)')
+        parser.add_argument('--max-paginas', type=int, default=340,
+                          help='Número máximo de páginas a processar (padrão: 340)')
+        parser.add_argument('--delay-min', type=float, default=2.0,
+                          help='Tempo mínimo de espera entre requisições em segundos (padrão: 2.0)')
+        parser.add_argument('--delay-max', type=float, default=4.0,
+                          help='Tempo máximo de espera entre requisições em segundos (padrão: 4.0)')
+        
+        args = parser.parse_args()
+        
         # Permite configurar via linha de comando ou usar valores padrão
         scraper = LocomotivaNovosDiscosScraper(
-            max_paginas=340,  # O site indica ter muitas páginas
-            delay_min=2.0,    # Atraso mínimo entre requisições
-            delay_max=4.0,    # Atraso máximo entre requisições
-            ignorar_produtos_existentes=True  # Força a recoleta de todos os produtos
+            max_paginas=args.max_paginas,
+            delay_min=args.delay_min,
+            delay_max=args.delay_max,
+            modo=args.modo
         )
         
         # Executa o scraper

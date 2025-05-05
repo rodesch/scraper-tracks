@@ -17,6 +17,7 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Optional, Any, Union
 import json
+import argparse
 
 # Cria as pastas para logs e debug se não existirem
 os.makedirs('logs', exist_ok=True)
@@ -46,7 +47,8 @@ class PopsDiscosScraper:
                  max_paginas: int = 100, 
                  delay_min: float = 1.0, 
                  delay_max: float = 3.0,
-                 arquivo_saida: str = None) -> None:
+                 arquivo_saida: str = None,
+                 modo: str = "novos") -> None:
         """
         Inicializa o scraper com parâmetros configuráveis
         
@@ -56,12 +58,14 @@ class PopsDiscosScraper:
             delay_min: Atraso mínimo entre requisições (segundos)
             delay_max: Atraso máximo entre requisições (segundos)
             arquivo_saida: Nome do arquivo CSV de saída
+            modo: Modo de execução ("full" para busca completa, "novos" para buscar apenas novos itens)
         """
         self.url_inicial = url_inicial or "https://www.popsdiscos.com.br/listagem_cd.asp"
         self.max_paginas = max_paginas
         self.delay_min = delay_min
         self.delay_max = delay_max
         self.arquivo_saida = arquivo_saida or self.DEFAULT_OUTPUT
+        self.modo = modo.lower()
         self.todos_produtos = []
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -78,6 +82,11 @@ class PopsDiscosScraper:
         """Carrega produtos de um arquivo CSV existente, se disponível"""
         if os.path.exists(self.arquivo_saida):
             try:
+                # Se modo for "full", não carrega os produtos existentes
+                if self.modo == "full":
+                    logger.info(f"Modo 'full' selecionado. Arquivo {self.arquivo_saida} será recriado.")
+                    return
+                
                 with open(self.arquivo_saida, 'r', encoding='utf-8') as arquivo:
                     leitor = csv.DictReader(arquivo)
                     self.todos_produtos = list(leitor)
@@ -202,22 +211,23 @@ class PopsDiscosScraper:
                     # Verifica se o produto já existe na lista
                     produto_existente = False
                     for produto in self.todos_produtos:
-                        if produto.get('titulo') == detalhes.get('titulo') and produto.get('url') == url_produto:
+                        if produto.get('codigo') == detalhes.get('codigo'):
                             produto_existente = True
                             break
                     
-                    # Adiciona o produto se não for duplicado
-                    if not produto_existente and not any(p['url'] == url_produto for p in produtos):
+                    # No modo "full", ou se o produto não existir, adiciona à lista
+                    if self.modo == "full" or not produto_existente:
+                        # Adiciona categoria e URL
                         detalhes['categoria'] = nome_categoria
                         detalhes['url'] = url_produto
                         detalhes['data_extracao'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        
                         produtos.append(detalhes)
                 
                 except Exception as e:
-                    logger.warning(f"Erro ao processar um link de produto: {e}")
-                    continue
+                    logger.error(f"Erro ao processar link de produto: {e}")
             
-            logger.info(f"Encontrados {len(produtos)} produtos com 'CD' nesta página.")
+            logger.info(f"Encontrados {len(produtos)} produtos na categoria '{nome_categoria}'")
             return produtos
             
         except Exception as e:
@@ -226,62 +236,84 @@ class PopsDiscosScraper:
     
     def _extrair_detalhes_produto(self, url_produto: str, codigo_cd: str) -> Optional[Dict[str, str]]:
         """
-        Extrai detalhes de um produto acessando sua página específica
+        Extrai detalhes do produto a partir da página do produto
         
         Args:
             url_produto: URL da página do produto
-            codigo_cd: Código do CD identificado na listagem
+            codigo_cd: Código do CD
             
         Returns:
-            Dicionário com os detalhes do produto ou None em caso de erro
+            Dicionário com detalhes do produto ou None se falhar
         """
+        soup = self._fazer_requisicao(url_produto)
+        
+        if not soup:
+            return None
+        
         try:
-            soup = self._fazer_requisicao(url_produto)
-            
-            if not soup:
-                return None
-            
             # Inicializa variáveis
             titulo = ""
             artista = ""
             album = ""
             preco = ""
             
-            # Nova implementação melhorada para extrair informações
-            # 1. Extrair título do álbum e artista a partir da classe arial2pretoB e style4
-            album_element = soup.find('div', class_='arial2pretoB')
-            if album_element and album_element.find('strong'):
-                album = album_element.find('strong').get_text().strip()
-            
-            artista_element = soup.find('div', class_='style4')
-            if artista_element and artista_element.find('strong'):
-                artista = artista_element.find('strong').get_text().strip()
-            
-            # 2. Extrair o código do CD
-            if not codigo_cd:
-                codigo_element = soup.find(text=re.compile(r'C.digo :'))
-                if codigo_element and codigo_element.parent:
-                    codigo_texto = codigo_element.parent.get_text()
-                    codigo_match = re.search(r'C.digo :\s*([A-Z0-9]+-\d+)', codigo_texto)
-                    if codigo_match:
-                        codigo_cd = codigo_match.group(1).strip()
-            
-            # 3. Extrair o preço
-            preco_element = soup.find(text=re.compile(r'R\$'))
-            if preco_element:
-                preco_texto = preco_element.strip()
-                preco_match = re.search(r'R\$\s*(\d+[,.]\d+)', preco_texto)
-                if preco_match:
-                    preco = preco_match.group(0).strip()
+            # Obtém o preço - geralmente está em um elemento específico
+            elem_preco = soup.find('span', class_='valor')
+            if elem_preco:
+                preco = elem_preco.get_text().strip()
             else:
-                # Buscar por outros formatos de preço (por exemplo, só o valor)
-                preco_element = soup.find('font', attrs={'color': '#CC3300'})
-                if preco_element:
-                    preco_texto = preco_element.get_text().strip()
-                    if 'R$' in preco_texto:
-                        preco_match = re.search(r'R\$\s*(\d+[,.]\d+)', preco_texto)
-                        if preco_match:
-                            preco = preco_match.group(0).strip()
+                # Tenta encontrar qualquer texto que pareça um preço (R$ XX,XX)
+                preco_regex = re.search(r'R\$\s*[\d\.,]+', soup.get_text())
+                if preco_regex:
+                    preco = preco_regex.group(0).strip()
+            
+            # Várias tentativas para extrair título, artista e álbum
+            
+            # 1. Procura por elementos específicos para artista e álbum
+            info_cd = soup.find('div', class_='info-cd')
+            if info_cd:
+                # Analisa os elementos de informação
+                title_elem = info_cd.find('h1')
+                if title_elem:
+                    album = title_elem.get_text().strip()
+                
+                artist_elem = info_cd.find('h2')
+                if artist_elem:
+                    artista = artist_elem.get_text().strip()
+            
+            # 2. Se não encontrou artista ou álbum, tenta buscar em outros elementos
+            if not artista or not album:
+                descricao = soup.find('div', class_='descricao')
+                if descricao:
+                    texto_descricao = descricao.get_text()
+                    
+                    # Tenta encontrar padrões como "Artista: X" ou "Álbum: Y"
+                    artista_match = re.search(r'[Aa]rtista:?\s*([^\n\r]+)', texto_descricao)
+                    if artista_match and not artista:
+                        artista = artista_match.group(1).strip()
+                    
+                    album_match = re.search(r'[ÁáAa]lbum:?\s*([^\n\r]+)', texto_descricao)
+                    if album_match and not album:
+                        album = album_match.group(1).strip()
+            
+            # 3. Procura no título da página
+            if not artista or not album:
+                h1_title = soup.find('h1')
+                if h1_title:
+                    titulo_completo = h1_title.get_text().strip()
+                    
+                    # Se tiver " - " pode separar artista e álbum
+                    if " - " in titulo_completo and not (artista and album):
+                        partes = titulo_completo.split(" - ", 1)
+                        if len(partes) == 2:
+                            if not album:
+                                album = partes[0].strip()
+                            if not artista:
+                                artista = partes[1].strip()
+                    else:
+                        # Se não conseguiu separar, usa como álbum
+                        if not album:
+                            album = titulo_completo
             
             # 4. Se não conseguiu extrair o título do álbum, tenta pelo title da página
             if not album:
@@ -400,7 +432,12 @@ class PopsDiscosScraper:
     
     def executar(self) -> None:
         """Executa o processo de extração completo"""
-        logger.info(f"Iniciando extração de CDs do site Pops Discos...")
+        logger.info(f"Iniciando extração de CDs do site Pops Discos no modo '{self.modo}'...")
+        
+        # Se estiver no modo "full", limpa os dados existentes
+        if self.modo == "full" and os.path.exists(self.arquivo_saida):
+            logger.info(f"Modo 'full' selecionado. Recriando o arquivo {self.arquivo_saida}")
+            self.todos_produtos = []
         
         try:
             # Primeiro, obtém as categorias disponíveis
@@ -430,8 +467,11 @@ class PopsDiscosScraper:
                     produtos = self.extrair_produtos_pagina(url, nome_categoria)
                     
                     if produtos:
-                        # Salva os produtos extraídos
-                        modo = 'w' if pagina_atual == 1 and not self.todos_produtos else 'a'
+                        # Determina o modo de escrita com base no contexto
+                        if self.modo == "full" and pagina_atual == 1 and categoria == categorias[0]:
+                            modo = 'w'  # Primeira página da primeira categoria no modo full
+                        else:
+                            modo = 'a'  # Todas as outras situações
                         
                         # Salva os produtos no CSV
                         self.salvar_para_csv(produtos, modo=modo)
@@ -467,10 +507,24 @@ class PopsDiscosScraper:
 def main():
     """Função principal para executar o scraper"""
     try:
+        # Configuração dos argumentos de linha de comando
+        parser = argparse.ArgumentParser(description='Scraper de CDs do site Pops Discos')
+        parser.add_argument('--modo', choices=['full', 'novos'], default='novos',
+                          help='Modo de execução: "full" para extrair tudo do zero, "novos" para extrair apenas novos itens (padrão: novos)')
+        parser.add_argument('--max-paginas', type=int, default=50,
+                          help='Número máximo de páginas a processar por categoria (padrão: 50)')
+        parser.add_argument('--delay-min', type=float, default=1.5,
+                          help='Tempo mínimo de espera entre requisições em segundos (padrão: 1.5)')
+        parser.add_argument('--delay-max', type=float, default=3.0,
+                          help='Tempo máximo de espera entre requisições em segundos (padrão: 3.0)')
+        
+        args = parser.parse_args()
+        
         scraper = PopsDiscosScraper(
-            max_paginas=50,  # Número máximo de páginas a processar
-            delay_min=1.5,   # Atraso mínimo entre requisições
-            delay_max=3.0    # Atraso máximo entre requisições
+            max_paginas=args.max_paginas,
+            delay_min=args.delay_min,
+            delay_max=args.delay_max,
+            modo=args.modo
         )
         
         scraper.executar()

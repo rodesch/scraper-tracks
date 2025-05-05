@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 from typing import List, Dict, Optional, Any, Union
 from urllib.parse import urljoin
 import re
+import argparse
 
 # Cria as pastas para logs e debug se não existirem
 os.makedirs('logs', exist_ok=True)
@@ -50,7 +51,8 @@ class TracksRioScraper:
                  max_paginas: int = 100, 
                  delay_min: float = 1.0, 
                  delay_max: float = 3.0,
-                 arquivo_saida: str = None) -> None:
+                 arquivo_saida: str = None,
+                 modo: str = "novos") -> None:
         """
         Inicializa o scraper com parâmetros configuráveis
         
@@ -60,24 +62,32 @@ class TracksRioScraper:
             delay_min: Atraso mínimo entre requisições (segundos)
             delay_max: Atraso máximo entre requisições (segundos)
             arquivo_saida: Nome do arquivo CSV de saída
+            modo: Modo de execução ("full" para busca completa, "novos" para buscar apenas novos itens)
         """
         self.url_inicial = url_inicial or "https://tracksrio.com.br/shop?order=create_date+desc&search=cd"
         self.max_paginas = max_paginas
         self.delay_min = delay_min
         self.delay_max = delay_max
         self.arquivo_saida = arquivo_saida or self.DEFAULT_OUTPUT
+        self.modo = modo.lower()
         self.todos_produtos = []
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
         # Verificar se já existe arquivo de produtos para continuar a partir dele
+        # Se o modo for "full", só carregará os produtos se o arquivo CSV existente for mantido
         self._carregar_produtos_existentes()
     
     def _carregar_produtos_existentes(self) -> None:
         """Carrega produtos de um arquivo CSV existente, se disponível"""
         if os.path.exists(self.arquivo_saida):
             try:
+                # Se modo for "full", deletar o arquivo existente em vez de carregá-lo
+                if self.modo == "full":
+                    logger.info(f"Modo 'full' selecionado. Arquivo {self.arquivo_saida} será recriado.")
+                    return
+                
                 with open(self.arquivo_saida, 'r', encoding='utf-8') as arquivo:
                     leitor = csv.DictReader(arquivo)
                     self.todos_produtos = list(leitor)
@@ -152,7 +162,7 @@ class TracksRioScraper:
                                         produto_existente = True
                                         break
                                 
-                                if not produto_existente and not any(p['titulo'] == titulo and p['url'] == url_produto for p in produtos):
+                                if (not produto_existente or self.modo == "full") and not any(p['titulo'] == titulo and p['url'] == url_produto for p in produtos):
                                     produtos.append({
                                         'titulo': titulo,
                                         'preco': preco_texto,
@@ -298,7 +308,12 @@ class TracksRioScraper:
 
     def executar(self) -> None:
         """Executa o processo de extração completo"""
-        logger.info(f"Iniciando extração de produtos com 'CD' no título...")
+        logger.info(f"Iniciando extração de produtos com 'CD' no título no modo '{self.modo}'...")
+        
+        # Se o modo for "full", apagamos o arquivo existente para começar do zero
+        if self.modo == "full" and os.path.exists(self.arquivo_saida):
+            logger.info(f"Modo 'full' selecionado. Recriando o arquivo {self.arquivo_saida}")
+            self.todos_produtos = []
         
         produtos_novos = []
         url_atual = self.url_inicial
@@ -327,7 +342,12 @@ class TracksRioScraper:
                 
                 # Salva incrementalmente a cada página para evitar perda de dados
                 if produtos_pagina:
-                    self.salvar_para_csv(produtos_pagina, modo='a' if pagina_atual > 1 or self.todos_produtos else 'w')
+                    if self.modo == "full" and pagina_atual == 1:
+                        modo_escrita = 'w'  # Sobrescreve o arquivo no modo "full" na primeira página
+                    else:
+                        modo_escrita = 'a'  # Anexa em todas as outras situações
+                        
+                    self.salvar_para_csv(produtos_pagina, modo=modo_escrita)
                     self.todos_produtos.extend(produtos_pagina)
                 
                 # Verifica se a página atual tem o mesmo número de produtos da anterior
@@ -376,11 +396,25 @@ class TracksRioScraper:
 def main():
     """Função principal para executar o scraper"""
     try:
+        # Configuração dos argumentos de linha de comando
+        parser = argparse.ArgumentParser(description='Scraper de produtos com "CD" no título do site Tracks Rio')
+        parser.add_argument('--modo', choices=['full', 'novos'], default='novos',
+                          help='Modo de execução: "full" para extrair tudo do zero, "novos" para extrair apenas novos itens (padrão: novos)')
+        parser.add_argument('--max-paginas', type=int, default=100,
+                          help='Número máximo de páginas a processar (padrão: 100)')
+        parser.add_argument('--delay-min', type=float, default=1.5,
+                          help='Tempo mínimo de espera entre requisições em segundos (padrão: 1.5)')
+        parser.add_argument('--delay-max', type=float, default=3.5,
+                          help='Tempo máximo de espera entre requisições em segundos (padrão: 3.5)')
+        
+        args = parser.parse_args()
+        
         # Permite configurar via linha de comando ou usar valores padrão
         scraper = TracksRioScraper(
-            max_paginas=100,  # Limite de segurança para evitar loops infinitos
-            delay_min=1.5,    # Atraso mínimo entre requisições
-            delay_max=3.5     # Atraso máximo entre requisições
+            max_paginas=args.max_paginas,
+            delay_min=args.delay_min,
+            delay_max=args.delay_max,
+            modo=args.modo
         )
         
         # Executa o scraper
