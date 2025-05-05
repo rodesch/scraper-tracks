@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 from typing import List, Dict, Optional, Any, Union
 from urllib.parse import urljoin
 import re
+import argparse
 
 # Cria as pastas para logs e debug se não existirem
 os.makedirs('logs', exist_ok=True)
@@ -51,7 +52,7 @@ class SupernovaDiscosScraper:
                  delay_min: float = 1.0, 
                  delay_max: float = 3.0,
                  arquivo_saida: str = None,
-                 ignorar_produtos_existentes: bool = False) -> None:
+                 modo: str = "novos") -> None:
         """
         Inicializa o scraper com parâmetros configuráveis
         
@@ -61,14 +62,14 @@ class SupernovaDiscosScraper:
             delay_min: Atraso mínimo entre requisições (segundos)
             delay_max: Atraso máximo entre requisições (segundos)
             arquivo_saida: Nome do arquivo CSV de saída
-            ignorar_produtos_existentes: Se True, recoleta todos os produtos mesmo que já existam
+            modo: Modo de execução ("full" para busca completa, "novos" para buscar apenas novos itens)
         """
         self.url_inicial = url_inicial or "https://www.supernovadiscos.com.br/discos/cds/?sort_by=created-descending"
         self.max_paginas = max_paginas
         self.delay_min = delay_min
         self.delay_max = delay_max
         self.arquivo_saida = arquivo_saida or self.DEFAULT_OUTPUT
-        self.ignorar_produtos_existentes = ignorar_produtos_existentes
+        self.modo = modo.lower()
         self.todos_produtos = []
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -80,15 +81,17 @@ class SupernovaDiscosScraper:
         }
         
         # Verificar se já existe arquivo de produtos para continuar a partir dele
-        if not self.ignorar_produtos_existentes:
-            self._carregar_produtos_existentes()
-        else:
-            logger.info("Ignorando produtos existentes. Todos os produtos serão recoletados.")
+        self._carregar_produtos_existentes()
     
     def _carregar_produtos_existentes(self) -> None:
         """Carrega produtos de um arquivo CSV existente, se disponível"""
         if os.path.exists(self.arquivo_saida):
             try:
+                # Se modo for "full", não carrega os produtos existentes
+                if self.modo == "full":
+                    logger.info(f"Modo 'full' selecionado. Arquivo {self.arquivo_saida} será recriado.")
+                    return
+                
                 with open(self.arquivo_saida, 'r', encoding='utf-8') as arquivo:
                     leitor = csv.DictReader(arquivo)
                     self.todos_produtos = list(leitor)
@@ -198,52 +201,43 @@ class SupernovaDiscosScraper:
                     # Limpa o preço usando regex
                     preco_match = re.search(r'R\$\s*(\d+[,.]\d+)', preco_texto)
                     if preco_match:
-                        preco_texto = preco_match.group(0)
+                        preco_texto = f"R$ {preco_match.group(1)}"
                     else:
-                        # Se não conseguir extrair com regex, usa o texto inteiro
+                        # Se não conseguir extrair o preço no formato esperado, usa o texto bruto
                         preco_texto = preco_texto.replace('\n', ' ').strip()
                     
                     # Extrai a URL do produto
                     url_produto = None
-                    # Verifica se o próprio elemento é um link
-                    if elemento.name == 'a' and elemento.has_attr('href'):
-                        url_produto = elemento['href']
-                    else:
-                        # Procura por um link dentro do elemento
-                        link_element = elemento.select_one('a[href]')
-                        if link_element:
-                            url_produto = link_element['href']
+                    link_element = elemento.select_one('a[href]')
+                    if link_element and link_element.get('href'):
+                        url_produto = link_element['href']
+                        # Garante URL completa
+                        if not url_produto.startswith('http'):
+                            url_produto = urljoin(self.BASE_URL, url_produto)
                     
                     if not url_produto:
                         continue
                     
-                    # Garante que a URL seja absoluta
-                    if not url_produto.startswith('http'):
-                        url_produto = f"{self.BASE_URL}{url_produto}" if url_produto.startswith('/') else f"{self.BASE_URL}/{url_produto}"
+                    # Extrair artista e álbum do título
+                    artista, album = self.extrair_artista_album(titulo)
                     
-                    # Extrai informações sobre banda/artista e álbum do título
-                    # Formato comum: "Banda - Álbum (Importado)"
-                    artista = ""
-                    album = ""
-                    if " - " in titulo:
-                        partes = titulo.split(" - ", 1)
-                        artista = partes[0].strip()
-                        album = partes[1].strip()
-                    else:
-                        album = titulo
-                    
-                    # Extrai a categoria (se disponível)
+                    # Categoria com base no título e URL
                     categoria = self.extrair_categoria(titulo, url_produto)
                     
                     # Verifica se o produto já existe na lista
-                    produto_existente = False
-                    for produto in self.todos_produtos:
-                        if produto.get('titulo') == titulo and produto.get('url') == url_produto:
-                            produto_existente = True
-                            break
+                    if self.modo != "full":
+                        produto_existente = False
+                        for produto in self.todos_produtos:
+                            if produto.get('titulo') == titulo and produto.get('url') == url_produto:
+                                produto_existente = True
+                                break
+                        
+                        # Adiciona o produto se não for duplicado
+                        if produto_existente:
+                            continue
                     
-                    # Adiciona o produto se não for duplicado
-                    if (self.ignorar_produtos_existentes or not produto_existente) and not any(p['titulo'] == titulo and p['url'] == url_produto for p in produtos):
+                    # Adiciona à lista de produtos
+                    if not any(p['titulo'] == titulo and p['url'] == url_produto for p in produtos):
                         produtos.append({
                             'titulo': titulo,
                             'artista': artista,
@@ -251,18 +245,45 @@ class SupernovaDiscosScraper:
                             'preco': preco_texto,
                             'categoria': categoria,
                             'url': url_produto,
-                            'data_extracao': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            'data_extracao': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         })
+                
                 except Exception as e:
-                    logger.warning(f"Erro ao processar um elemento de produto: {e}")
-                    continue
+                    logger.error(f"Erro ao processar elemento de produto: {e}")
             
-            logger.info(f"Extraídos {len(produtos)} produtos nesta página.")
+            logger.info(f"Extraídos {len(produtos)} produtos da página.")
             return produtos
             
         except Exception as e:
             logger.error(f"Erro ao extrair produtos da página {url}: {e}")
             return []
+    
+    def extrair_artista_album(self, titulo: str) -> tuple:
+        """
+        Tenta separar o título em artista e álbum
+        
+        Args:
+            titulo: Título completo do produto
+            
+        Returns:
+            Tupla (artista, album)
+        """
+        # Inicializa valores padrão
+        artista = ""
+        album = titulo
+        
+        # Tenta separar pelo traço "-" ou "–" (traço maior)
+        separadores = [' - ', ' – ', ' — ', ': ']
+        for sep in separadores:
+            if sep in titulo:
+                partes = titulo.split(sep, 1)
+                if len(partes) == 2:
+                    # Remove "CD" do início se presente e limpa espaços
+                    artista = re.sub(r'^CD\s+', '', partes[0]).strip()
+                    album = partes[1].strip()
+                    break
+        
+        return artista, album
     
     def extrair_categoria(self, titulo: str, url_produto: str) -> str:
         """
@@ -278,45 +299,31 @@ class SupernovaDiscosScraper:
         titulo_lower = titulo.lower()
         url_lower = url_produto.lower()
         
-        # Tenta extrair a categoria da URL primeiro
-        if 'rock' in url_lower:
-            # Tenta ser mais específico
-            if 'classic' in url_lower or '70' in url_lower:
-                return "Rock Clássico / Prog / 70's"
-            elif 'metal' in url_lower or 'punk' in url_lower or 'grunge' in url_lower:
-                return "Metal / Punk / Grunge"
-            elif 'alt' in url_lower or 'indie' in url_lower or 'pop' in url_lower:
-                return "Alternativo / Indie / Pop Rock"
-            else:
-                return "Rock"
-        elif 'jazz' in url_lower or 'blues' in url_lower:
-            return "Jazz / Blues"
-        elif 'brasil' in url_lower:
-            return "Brasil"
-        elif 'trilha' in url_lower:
-            return "Trilha Sonora"
-        elif 'rap' in url_lower or 'hip' in url_lower:
-            return "Rap / Hip Hop"
-        elif 'pop' in url_lower:
-            return "Pop / Cantoras"
-        
-        # Se não conseguir extrair da URL, tenta pelo título
+        # Categorias com mapeamento mais detalhado
         categorias = [
-            (["rock", "prog", "psych", "70", "60"], "Rock Clássico / Prog / 70's"),
-            (["metal", "punk", "grunge", "thrash", "death", "black"], "Metal / Punk / Grunge"),
-            (["alt", "indie", "pop rock", "new wave", "post"], "Alternativo / Indie / Pop Rock"),
-            (["jazz", "blues"], "Jazz / Blues"),
-            (["brasil", "mpb", "samba", "bossa", "choro", "nacional"], "Brasil"),
-            (["trilha", "soundtrack", "ost"], "Trilha Sonora"),
-            (["rap", "hip hop", "hip-hop"], "Rap / Hip Hop"),
-            (["pop", "cantora", "diva"], "Pop / Cantoras")
+            (["rock", "pop"], "Rock / Pop"),
+            (["jazz"], "Jazz"),
+            (["brasil", "mpb", "samba", "bossa", "choro"], "Música do Brasil"),
+            (["world", "música do mundo"], "World Music"),
+            (["black", "soul", "funk", "r&b", "hip hop", "rap"], "Black Music"),
+            (["clássic", "erudito", "orquestra", "symphony"], "Eruditos"),
+            (["blues"], "Blues"),
+            (["reggae", "ska", "dub"], "Reggae"),
+            (["eletrônic", "techno", "house", "trance"], "Eletrônica")
         ]
         
+        # Verifica se alguma categoria corresponde ao título
         for termos, categoria in categorias:
-            if any(termo in titulo_lower for termo in termos):
+            if any(termo in titulo_lower for termo in termos) or any(termo in url_lower for termo in termos):
                 return categoria
         
-        return "Outros"
+        # Verifica categorias específicas na URL
+        if "rock" in url_lower or "pop" in url_lower:
+            return "Rock / Pop"
+        elif "nacional" in url_lower or "brasil" in url_lower:
+            return "Música do Brasil"
+        
+        return "Outros Sons"
     
     def encontrar_proxima_pagina(self, soup: BeautifulSoup, pagina_atual: int) -> Optional[str]:
         """
@@ -398,7 +405,7 @@ class SupernovaDiscosScraper:
                         produto.get('preco', ''),
                         produto.get('categoria', ''),
                         produto.get('url', ''),
-                        produto.get('data_extracao', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                        produto.get('data_extracao', datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
                     ])
             
             logger.info(f"Dados salvos com sucesso no arquivo {self.arquivo_saida}")
@@ -420,6 +427,11 @@ class SupernovaDiscosScraper:
         pagina_atual = 1
         falhas_consecutivas = 0
         produtos_vazios_consecutivos = 0
+        
+        # Se estiver no modo "full", limpa os dados existentes
+        if self.modo == "full" and os.path.exists(self.arquivo_saida):
+            logger.info(f"Modo 'full' selecionado. Recriando o arquivo {self.arquivo_saida}")
+            self.todos_produtos = []
         
         while pagina_atual <= self.max_paginas:
             # Constrói a URL da página atual usando o parâmetro mpage
@@ -458,9 +470,14 @@ class SupernovaDiscosScraper:
                     # Adiciona os produtos à lista
                     produtos_total.extend(produtos_pagina)
                     
+                    # Determina o modo de escrita para o CSV
+                    if self.modo == "full" and pagina_atual == 1:
+                        modo_escrita = 'w'  # Sobrescreve o arquivo no modo "full" na primeira página
+                    else:
+                        modo_escrita = 'a'  # Anexa em todas as outras situações
+                    
                     # Salva incrementalmente
-                    self.salvar_para_csv(produtos_pagina, 
-                                        modo='a' if pagina_atual > 1 or self.todos_produtos else 'w')
+                    self.salvar_para_csv(produtos_pagina, modo=modo_escrita)
                     
                     # Adiciona à lista de todos os produtos
                     self.todos_produtos.extend(produtos_pagina)
@@ -490,7 +507,7 @@ class SupernovaDiscosScraper:
 
     def executar(self) -> None:
         """Executa o processo de extração completo"""
-        logger.info(f"Iniciando extração de CDs do site Supernova Discos...")
+        logger.info(f"Iniciando extração de CDs do site Supernova Discos no modo '{self.modo}'...")
         
         # Inicia a contagem de tempo
         tempo_inicio = time.time()
@@ -507,19 +524,29 @@ class SupernovaDiscosScraper:
 def main():
     """Função principal para executar o scraper"""
     try:
+        # Configuração dos argumentos de linha de comando
+        parser = argparse.ArgumentParser(description='Scraper de CDs do site Supernova Discos')
+        parser.add_argument('--modo', choices=['full', 'novos'], default='novos',
+                          help='Modo de execução: "full" para extrair tudo do zero, "novos" para extrair apenas novos itens (padrão: novos)')
+        parser.add_argument('--max-paginas', type=int, default=100,
+                          help='Número máximo de páginas a processar (padrão: 100)')
+        parser.add_argument('--delay-min', type=float, default=1.0,
+                          help='Tempo mínimo de espera entre requisições em segundos (padrão: 1.0)')
+        parser.add_argument('--delay-max', type=float, default=3.0,
+                          help='Tempo máximo de espera entre requisições em segundos (padrão: 3.0)')
+        
+        args = parser.parse_args()
+        
         # Permite configurar via linha de comando ou usar valores padrão
         scraper = SupernovaDiscosScraper(
-            max_paginas=100,
-            delay_min=1.0,
-            delay_max=3.0,
-            ignorar_produtos_existentes=True  # Força a recoleta de todos os produtos
+            max_paginas=args.max_paginas,
+            delay_min=args.delay_min,
+            delay_max=args.delay_max,
+            modo=args.modo
         )
         
         # Executa o scraper
-        produtos = scraper.extrair_produtos_com_paginacao()
-        
-        # Exibe estatísticas finais
-        logger.info(f"Extração concluída. Total de {len(produtos)} produtos encontrados.")
+        scraper.executar()
         
     except KeyboardInterrupt:
         logger.info("Processo interrompido pelo usuário.")

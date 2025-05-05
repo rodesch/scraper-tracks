@@ -7,6 +7,7 @@ import re
 from flask import Flask, render_template, jsonify, request, Response, send_file
 from datetime import datetime
 import hashlib
+import time
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -164,87 +165,40 @@ def atualizar_todos():
 
 def executar_atualizacao_todos():
     """Executa o script de atualização completa de todos os scrapers em um processo separado"""
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_filename = f"logs/atualizacao_todos_scrapers_{timestamp}.log"
-    
     try:
-        os.makedirs('logs', exist_ok=True)
-        with open(log_filename, 'w', encoding='utf-8') as log_file:
-            # Verifica se o arquivo existe antes de executar
-            if not os.path.exists('atualizar_todos_scrapers.py'):
-                log_file.write("ERRO: Arquivo atualizar_todos_scrapers.py não encontrado\n")
-                print("ERRO: Arquivo atualizar_todos_scrapers.py não encontrado")
-                return
+        # Executa cada scraper no modo "full"
+        for scraper_id in SCRAPERS:
+            # Pula scrapers que já estão em execução
+            if SCRAPERS[scraper_id]['status'] == 'rodando':
+                continue
                 
-            process = subprocess.Popen(['python3', 'atualizar_todos_scrapers.py'], 
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT,
-                                    universal_newlines=True)
-            
-            # Captura a saída em tempo real e escreve no arquivo de log
-            for line in iter(process.stdout.readline, ''):
-                print(line.strip())  # Exibe no console também para debug
-                log_file.write(line)
-                log_file.flush()
-            
-            # Aguarda o processo terminar
-            process.wait()
-            
-            # Após concluído, atualiza as informações de todos os scrapers
-            for key in SCRAPERS:
-                atualizar_informacoes_scraper(key)
+            # Executa o scraper no modo "full"
+            try:
+                executar_scraper(scraper_id, modo='full')
+                # Pausa entre os scrapers para não sobrecarregar
+                time.sleep(5)
+            except Exception as e:
+                print(f"Erro ao executar scraper {scraper_id}: {e}")
                 
     except Exception as e:
         error_msg = f"Erro ao executar atualização de todos os scrapers: {e}"
         print(error_msg)
-        # Registra o erro no arquivo de log se possível
-        try:
-            with open(log_filename, 'a', encoding='utf-8') as log_file:
-                log_file.write(f"ERRO: {str(e)}\n")
-        except Exception as log_error:
-            print(f"Erro ao escrever no log: {log_error}")
 
 def executar_atualizacao_locomotiva():
-    """Executa o script de atualização completa da Locomotiva em um processo separado"""
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_filename = f"logs/atualizacao_locomotiva_{timestamp}.log"
-    
+    """Executa o script de atualização completa da Locomotiva Discos em um processo separado"""
+    # Inicia os dois scrapers da Locomotiva no modo "full"
     try:
-        os.makedirs('logs', exist_ok=True)
-        with open(log_filename, 'w', encoding='utf-8') as log_file:
-            # Verifica se o arquivo existe antes de executar
-            if not os.path.exists('atualizar_produtos_locomotiva.py'):
-                log_file.write("ERRO: Arquivo atualizar_produtos_locomotiva.py não encontrado\n")
-                print("ERRO: Arquivo atualizar_produtos_locomotiva.py não encontrado")
-                return
-                
-            process = subprocess.Popen(['python3', 'atualizar_produtos_locomotiva.py'], 
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT,
-                                    universal_newlines=True)
-            
-            # Captura a saída em tempo real e escreve no arquivo de log
-            for line in iter(process.stdout.readline, ''):
-                print(line.strip())  # Exibe no console também para debug
-                log_file.write(line)
-                log_file.flush()
-            
-            # Aguarda o processo terminar
-            process.wait()
-            
-            # Após concluído, atualiza as informações dos scrapers
-            for key in ['locomotiva_usados', 'locomotiva_novos']:
-                atualizar_informacoes_scraper(key)
-                
+        # Scraper de CDs usados
+        executar_scraper('locomotiva_usados', modo='full')
+        
+        # Aguarda 5 segundos entre os scrapers
+        time.sleep(5)
+        
+        # Scraper de CDs novos
+        executar_scraper('locomotiva_novos', modo='full')
+        
     except Exception as e:
-        error_msg = f"Erro ao executar atualização da Locomotiva: {e}"
-        print(error_msg)
-        # Registra o erro no arquivo de log se possível
-        try:
-            with open(log_filename, 'a', encoding='utf-8') as log_file:
-                log_file.write(f"ERRO: {str(e)}\n")
-        except Exception as log_error:
-            print(f"Erro ao escrever no log: {log_error}")
+        print(f"Erro ao executar atualização da Locomotiva: {e}")
 
 # Rota para iniciar um scraper
 @app.route('/iniciar/<scraper_id>', methods=['POST'])
@@ -256,18 +210,23 @@ def iniciar_scraper(scraper_id):
         return jsonify({'status': 'aviso', 'mensagem': 'Scraper já está em execução'})
     
     try:
+        # Recebe o modo de execução do formulário (padrão é "novos")
+        modo = request.form.get('modo', 'novos')
+        if modo not in ['full', 'novos']:
+            modo = 'novos'  # Valor padrão seguro
+        
         # Armazena os IDs dos produtos antes de iniciar um novo scraper
         arquivo_csv = SCRAPERS[scraper_id]['arquivo_csv']
         SCRAPERS[scraper_id]['produtos_anteriores'] = obter_ids_produtos_atuais(arquivo_csv)
         
         # Inicia o script em um processo separado
-        thread = threading.Thread(target=executar_scraper, args=(scraper_id,))
+        thread = threading.Thread(target=executar_scraper, args=(scraper_id, modo))
         thread.daemon = True
         thread.start()
         
         return jsonify({
             'status': 'sucesso', 
-            'mensagem': f'Scraper {SCRAPERS[scraper_id]["nome"]} iniciado com sucesso'
+            'mensagem': f'Scraper {SCRAPERS[scraper_id]["nome"]} iniciado com sucesso no modo {modo}'
         })
     except Exception as e:
         return jsonify({'status': 'erro', 'mensagem': f'Erro ao iniciar scraper: {str(e)}'})
@@ -296,7 +255,7 @@ def gerar_produto_id(produto):
     identificador = (produto.get('url', '') + produto.get('titulo', '')).encode('utf-8')
     return hashlib.md5(identificador).hexdigest()
 
-def executar_scraper(scraper_id):
+def executar_scraper(scraper_id, modo="novos"):
     SCRAPERS[scraper_id]['status'] = 'rodando'
     SCRAPERS[scraper_id]['ultima_execucao'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
@@ -307,7 +266,10 @@ def executar_scraper(scraper_id):
     
     try:
         with open(log_filename, 'w', encoding='utf-8') as log_file:
-            process = subprocess.Popen(['python3', script_path], 
+            # Adiciona o parâmetro --modo ao comando do script
+            command = ['python3', script_path, '--modo', modo]
+            
+            process = subprocess.Popen(command, 
                                     stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT,
                                     universal_newlines=True)

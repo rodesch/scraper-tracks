@@ -134,14 +134,18 @@ $(document).ready(function() {
         const scraperId = $(this).data('id');
         currentScraperId = scraperId;
         
+        // Obtém o modo selecionado do dropdown
+        const modoSelecionado = $(`#modo-${scraperId}`).val();
+        
         // Mostra o modal de loading
-        $('#loading-message').text(`Iniciando scraper ${scraperId}...`);
+        $('#loading-message').text(`Iniciando scraper ${scraperId} no modo ${modoSelecionado}...`);
         loadingModal.show();
         
         // Faz a requisição para iniciar o scraper
         $.ajax({
             url: `/iniciar/${scraperId}`,
             method: 'POST',
+            data: { modo: modoSelecionado },
             success: function(resposta) {
                 if (resposta.status === 'sucesso' || resposta.status === 'aviso') {
                     // Inicia o intervalo para verificar o status periodicamente
