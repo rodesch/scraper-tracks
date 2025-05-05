@@ -25,6 +25,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from typing import List, Dict, Optional, Any, Union
+from webdriver_manager.chrome import ChromeDriverManager
 
 # Cria as pastas para logs e debug se não existirem
 os.makedirs('logs', exist_ok=True)
@@ -79,16 +80,16 @@ def inicializar_driver():
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-        # Adicionar opções para evitar detecção de automação
+        # Evitar detecção de automação
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option("useAutomationExtension", False)
         
-        # Usar o ChromeDriver instalado manualmente no Dockerfile
-        service = Service(executable_path="/usr/local/bin/chromedriver")
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Usar o webdriver_manager para gerenciar o ChromeDriver
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
         
         driver.set_page_load_timeout(30)
+        logging.info("Driver do Selenium inicializado com sucesso.")
         return driver
     
     except Exception as e:

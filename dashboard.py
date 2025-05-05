@@ -122,6 +122,130 @@ def dashboard():
     
     return render_template('dashboard.html', scrapers=SCRAPERS)
 
+# Rota para executar a atualização completa da Locomotiva Discos
+@app.route('/atualizar_locomotiva', methods=['POST'])
+def atualizar_locomotiva():
+    """Executa o script de atualização completa da Locomotiva Discos"""
+    try:
+        # Inicia o script em um processo separado
+        thread = threading.Thread(target=executar_atualizacao_locomotiva)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'status': 'sucesso', 
+            'mensagem': 'Atualização completa da Locomotiva Discos iniciada'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'erro', 
+            'mensagem': f'Erro ao iniciar atualização: {str(e)}'
+        })
+
+# Rota para executar a atualização completa de todos os scrapers
+@app.route('/atualizar_todos', methods=['POST'])
+def atualizar_todos():
+    """Executa o script de atualização completa de todos os scrapers"""
+    try:
+        # Inicia o script em um processo separado
+        thread = threading.Thread(target=executar_atualizacao_todos)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'status': 'sucesso', 
+            'mensagem': 'Atualização completa de todos os scrapers iniciada'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'erro', 
+            'mensagem': f'Erro ao iniciar atualização: {str(e)}'
+        })
+
+def executar_atualizacao_todos():
+    """Executa o script de atualização completa de todos os scrapers em um processo separado"""
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_filename = f"logs/atualizacao_todos_scrapers_{timestamp}.log"
+    
+    try:
+        os.makedirs('logs', exist_ok=True)
+        with open(log_filename, 'w', encoding='utf-8') as log_file:
+            # Verifica se o arquivo existe antes de executar
+            if not os.path.exists('atualizar_todos_scrapers.py'):
+                log_file.write("ERRO: Arquivo atualizar_todos_scrapers.py não encontrado\n")
+                print("ERRO: Arquivo atualizar_todos_scrapers.py não encontrado")
+                return
+                
+            process = subprocess.Popen(['python3', 'atualizar_todos_scrapers.py'], 
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT,
+                                    universal_newlines=True)
+            
+            # Captura a saída em tempo real e escreve no arquivo de log
+            for line in iter(process.stdout.readline, ''):
+                print(line.strip())  # Exibe no console também para debug
+                log_file.write(line)
+                log_file.flush()
+            
+            # Aguarda o processo terminar
+            process.wait()
+            
+            # Após concluído, atualiza as informações de todos os scrapers
+            for key in SCRAPERS:
+                atualizar_informacoes_scraper(key)
+                
+    except Exception as e:
+        error_msg = f"Erro ao executar atualização de todos os scrapers: {e}"
+        print(error_msg)
+        # Registra o erro no arquivo de log se possível
+        try:
+            with open(log_filename, 'a', encoding='utf-8') as log_file:
+                log_file.write(f"ERRO: {str(e)}\n")
+        except Exception as log_error:
+            print(f"Erro ao escrever no log: {log_error}")
+
+def executar_atualizacao_locomotiva():
+    """Executa o script de atualização completa da Locomotiva em um processo separado"""
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_filename = f"logs/atualizacao_locomotiva_{timestamp}.log"
+    
+    try:
+        os.makedirs('logs', exist_ok=True)
+        with open(log_filename, 'w', encoding='utf-8') as log_file:
+            # Verifica se o arquivo existe antes de executar
+            if not os.path.exists('atualizar_produtos_locomotiva.py'):
+                log_file.write("ERRO: Arquivo atualizar_produtos_locomotiva.py não encontrado\n")
+                print("ERRO: Arquivo atualizar_produtos_locomotiva.py não encontrado")
+                return
+                
+            process = subprocess.Popen(['python3', 'atualizar_produtos_locomotiva.py'], 
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT,
+                                    universal_newlines=True)
+            
+            # Captura a saída em tempo real e escreve no arquivo de log
+            for line in iter(process.stdout.readline, ''):
+                print(line.strip())  # Exibe no console também para debug
+                log_file.write(line)
+                log_file.flush()
+            
+            # Aguarda o processo terminar
+            process.wait()
+            
+            # Após concluído, atualiza as informações dos scrapers
+            for key in ['locomotiva_usados', 'locomotiva_novos']:
+                atualizar_informacoes_scraper(key)
+                
+    except Exception as e:
+        error_msg = f"Erro ao executar atualização da Locomotiva: {e}"
+        print(error_msg)
+        # Registra o erro no arquivo de log se possível
+        try:
+            with open(log_filename, 'a', encoding='utf-8') as log_file:
+                log_file.write(f"ERRO: {str(e)}\n")
+        except Exception as log_error:
+            print(f"Erro ao escrever no log: {log_error}")
+
 # Rota para iniciar um scraper
 @app.route('/iniciar/<scraper_id>', methods=['POST'])
 def iniciar_scraper(scraper_id):

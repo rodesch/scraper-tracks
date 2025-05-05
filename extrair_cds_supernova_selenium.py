@@ -113,9 +113,8 @@ class SupernovaDiscosSeleniumScraper:
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option("useAutomationExtension", False)
             
-            # Usar o ChromeDriver instalado manualmente no Dockerfile
-            service = Service(executable_path="/usr/local/bin/chromedriver")
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            # Usar o webdriver_manager para gerenciar o ChromeDriver
+            self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
             
             self.driver.set_page_load_timeout(30)
             logger.info("Driver do Selenium inicializado com sucesso.")

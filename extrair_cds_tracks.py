@@ -50,7 +50,8 @@ class TracksRioScraper:
                  max_paginas: int = 100, 
                  delay_min: float = 1.0, 
                  delay_max: float = 3.0,
-                 arquivo_saida: str = None) -> None:
+                 arquivo_saida: str = None,
+                 ignorar_produtos_existentes: bool = False) -> None:
         """
         Inicializa o scraper com parâmetros configuráveis
         
@@ -60,19 +61,29 @@ class TracksRioScraper:
             delay_min: Atraso mínimo entre requisições (segundos)
             delay_max: Atraso máximo entre requisições (segundos)
             arquivo_saida: Nome do arquivo CSV de saída
+            ignorar_produtos_existentes: Se True, recoleta todos os produtos mesmo que já existam
         """
-        self.url_inicial = url_inicial or "https://tracksrio.com.br/shop?order=create_date+desc&search=cd"
+        self.url_inicial = url_inicial or "https://tracksrio.com.br/shop/order/create_date+desc/search/cd"
         self.max_paginas = max_paginas
         self.delay_min = delay_min
         self.delay_max = delay_max
         self.arquivo_saida = arquivo_saida or self.DEFAULT_OUTPUT
+        self.ignorar_produtos_existentes = ignorar_produtos_existentes
         self.todos_produtos = []
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Connection': 'keep-alive',
+            'Referer': 'https://tracksrio.com.br/',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
         }
         
         # Verificar se já existe arquivo de produtos para continuar a partir dele
-        self._carregar_produtos_existentes()
+        if not self.ignorar_produtos_existentes:
+            self._carregar_produtos_existentes()
+        else:
+            logger.info("Ignorando produtos existentes. Todos os produtos serão recoletados.")
     
     def _carregar_produtos_existentes(self) -> None:
         """Carrega produtos de um arquivo CSV existente, se disponível"""
@@ -96,6 +107,12 @@ class TracksRioScraper:
             BeautifulSoup object ou None em caso de erro
         """
         try:
+            # Adiciona uma string aleatória à URL para evitar cache
+            if '?' in url:
+                url = f"{url}&_t={int(time.time())}"
+            else:
+                url = f"{url}?_t={int(time.time())}"
+                
             resposta = requests.get(url, headers=self.headers, timeout=30)
             resposta.raise_for_status()
             return BeautifulSoup(resposta.text, 'html.parser')
@@ -145,21 +162,33 @@ class TracksRioScraper:
                             
                             # Adiciona o produto se tiver título e preço e não for duplicado
                             if titulo and preco_texto:
-                                # Verifica se já existe na lista
-                                produto_existente = False
-                                for produto in self.todos_produtos:
-                                    if produto.get('titulo') == titulo and produto.get('url') == url_produto:
-                                        produto_existente = True
-                                        break
-                                
-                                if not produto_existente and not any(p['titulo'] == titulo and p['url'] == url_produto for p in produtos):
-                                    produtos.append({
-                                        'titulo': titulo,
-                                        'preco': preco_texto,
-                                        'categoria': self.extrair_categoria(titulo),
-                                        'url': url_produto,
-                                        'data_extracao': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                                    })
+                                # Verifica se já existe na lista (pula se estiver ignorando produtos existentes)
+                                if not self.ignorar_produtos_existentes:
+                                    produto_existente = False
+                                    for produto in self.todos_produtos:
+                                        if produto.get('titulo') == titulo and produto.get('url') == url_produto:
+                                            produto_existente = True
+                                            break
+                                    
+                                    # Adiciona o produto se não for duplicado
+                                    if not produto_existente and not any(p['titulo'] == titulo and p['url'] == url_produto for p in produtos):
+                                        produtos.append({
+                                            'titulo': titulo,
+                                            'preco': preco_texto,
+                                            'categoria': self.extrair_categoria(titulo),
+                                            'url': url_produto,
+                                            'data_extracao': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                        })
+                                else:
+                                    # Adiciona todos os produtos quando ignorar_produtos_existentes é True
+                                    if not any(p['titulo'] == titulo and p['url'] == url_produto for p in produtos):
+                                        produtos.append({
+                                            'titulo': titulo,
+                                            'preco': preco_texto,
+                                            'categoria': self.extrair_categoria(titulo),
+                                            'url': url_produto,
+                                            'data_extracao': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                        })
             
             logger.info(f"Encontrados {len(produtos)} produtos com 'CD' nesta página.")
             return produtos
@@ -378,9 +407,10 @@ def main():
     try:
         # Permite configurar via linha de comando ou usar valores padrão
         scraper = TracksRioScraper(
-            max_paginas=100,  # Limite de segurança para evitar loops infinitos
-            delay_min=1.5,    # Atraso mínimo entre requisições
-            delay_max=3.5     # Atraso máximo entre requisições
+            max_paginas=100,
+            delay_min=1.0,
+            delay_max=3.0,
+            ignorar_produtos_existentes=True  # Força a recoleta de todos os produtos
         )
         
         # Executa o scraper

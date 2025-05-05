@@ -43,6 +43,92 @@ $(document).ready(function() {
     // Inicializa a página atualizando o status de todos os scrapers
     atualizarTodosStatus();
     
+    // Evento para botão de atualização completa da Locomotiva Discos
+    $('#btn-atualizar-locomotiva').on('click', function() {
+        // Mostra o modal de loading
+        $('#loading-message').text('Iniciando atualização completa da Locomotiva Discos...');
+        loadingModal.show();
+        
+        // Faz a requisição para iniciar a atualização completa
+        $.ajax({
+            url: '/atualizar_locomotiva',
+            method: 'POST',
+            success: function(resposta) {
+                if (resposta.status === 'sucesso') {
+                    // Configura um intervalo para atualizar o status dos scrapers da Locomotiva
+                    if (scrapeIntervalId) {
+                        clearInterval(scrapeIntervalId);
+                    }
+                    
+                    scrapeIntervalId = setInterval(function() {
+                        verificarStatus('locomotiva_usados');
+                        verificarStatus('locomotiva_novos');
+                    }, 3000);
+                    
+                    // Oculta o modal após 2 segundos
+                    setTimeout(function() {
+                        loadingModal.hide();
+                        // Mostra uma mensagem de sucesso
+                        alert('Atualização completa da Locomotiva Discos iniciada com sucesso!');
+                    }, 2000);
+                } else {
+                    // Em caso de erro, mostra a mensagem e esconde o modal
+                    alert(`Erro: ${resposta.mensagem}`);
+                    loadingModal.hide();
+                }
+            },
+            error: function() {
+                alert('Erro ao iniciar a atualização completa. Tente novamente.');
+                loadingModal.hide();
+            }
+        });
+    });
+    
+    // Evento para botão de atualização completa de todos os scrapers
+    $('#btn-atualizar-todos').on('click', function() {
+        // Confirmação para evitar inicialização acidental
+        if (!confirm('Esta operação irá atualizar TODOS os scrapers e pode levar bastante tempo. Deseja continuar?')) {
+            return;
+        }
+        
+        // Mostra o modal de loading
+        $('#loading-message').text('Iniciando atualização completa de todos os scrapers...');
+        loadingModal.show();
+        
+        // Faz a requisição para iniciar a atualização completa
+        $.ajax({
+            url: '/atualizar_todos',
+            method: 'POST',
+            success: function(resposta) {
+                if (resposta.status === 'sucesso') {
+                    // Configura um intervalo para atualizar o status de todos os scrapers
+                    if (scrapeIntervalId) {
+                        clearInterval(scrapeIntervalId);
+                    }
+                    
+                    scrapeIntervalId = setInterval(function() {
+                        atualizarTodosStatus();
+                    }, 5000);
+                    
+                    // Oculta o modal após 2 segundos
+                    setTimeout(function() {
+                        loadingModal.hide();
+                        // Mostra uma mensagem de sucesso
+                        alert('Atualização completa de todos os scrapers iniciada com sucesso! Esse processo pode levar bastante tempo para ser concluído.');
+                    }, 2000);
+                } else {
+                    // Em caso de erro, mostra a mensagem e esconde o modal
+                    alert(`Erro: ${resposta.mensagem}`);
+                    loadingModal.hide();
+                }
+            },
+            error: function() {
+                alert('Erro ao iniciar a atualização completa. Tente novamente.');
+                loadingModal.hide();
+            }
+        });
+    });
+    
     // Evento para botões de iniciar scrapers
     $('.btn-iniciar').on('click', function() {
         const scraperId = $(this).data('id');
